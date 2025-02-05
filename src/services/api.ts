@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { AIResponse, Task, TaskOrganizationResponse } from '../types';
+import { AIResponse, Task, TaskOrganizationResponse, TaskDetailResponse, Subtask } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -56,42 +56,46 @@ export const processMessage = async (message: string, threadId?: string): Promis
   }
 };
 
-export const organizeTask = async (task: Task, threadId?: string): Promise<TaskOrganizationResponse> => {
+export const organizeTask = async (task: Task, threadId?: string): Promise<TaskDetailResponse> => {
   try {
+    console.log('Sending task to organize:', task);
     const response = await api.post('/tasks/organize', { task, threadId });
+    console.log('Raw response from organize:', response);
     
-    // If successful, create subtasks through the backend
-    if (response.data.data?.tasks) {
-      const subtasks = response.data.data.tasks.map(subtask => ({
-        ...subtask,
-        id: `${task.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        parentId: task.id,
-        assigned_to: subtask.assigned_to || task.assigned_to || 'Unassigned',
-        requester: subtask.requester || task.requester || 'Unknown',
-        status: subtask.status || 'pending'
-      }));
-
-      // Save subtasks through backend
-      for (const subtask of subtasks) {
-        await api.post(`/tasks/${task.id}/subtasks`, subtask);
-      }
-    }
-
-    return response.data;
+    // Ensure we're returning the correct data structure
+    const responseData: TaskDetailResponse = {
+      subtasks: response.data.subtasks || [],
+      message: response.data.message || [],
+      threadId: response.data.threadId
+    };
+    
+    console.log('Processed response data:', responseData);
+    return responseData;
   } catch (error: any) {
     console.error('Error organizing task:', error);
     throw error;
   }
 };
 
-export const askFollowUpQuestion = async (taskId: string, question: string, threadId?: string): Promise<TaskOrganizationResponse> => {
+export const askFollowUpQuestion = async (taskId: string, question: string, threadId?: string): Promise<TaskDetailResponse> => {
   try {
+    console.log('Sending follow-up question:', { taskId, question, threadId });
     const response = await api.post('/tasks/ask-followup', { 
       taskId,
       question,
       threadId 
     });
-    return response.data;
+    console.log('Raw response from follow-up:', response);
+    
+    // Ensure we're returning the correct data structure
+    const responseData: TaskDetailResponse = {
+      subtasks: response.data.subtasks || [],
+      message: response.data.message || [],
+      threadId: response.data.threadId
+    };
+    
+    console.log('Processed response data:', responseData);
+    return responseData;
   } catch (error: any) {
     console.error('Error asking follow-up question:', error);
     throw error;
@@ -99,17 +103,16 @@ export const askFollowUpQuestion = async (taskId: string, question: string, thre
 };
 
 // Task CRUD operations
-export const getAllTasks = async (): Promise<Task[]> => {
+export const getAllTasks = async (signal?: AbortSignal): Promise<Task[]> => {
   try {
-    const response = await api.get('/tasks');
-    return response.data.map((task: Task) => ({
-      ...task,
-      assigned_to: task.assigned_to || 'Unassigned',
-      requester: task.requester || 'Unknown',
-      status: task.status || 'pending'
-    }));
+    const response = await api.get('/tasks', { signal });
+    return response.data;
   } catch (error: any) {
-    console.error('Error getting tasks:', error);
+    if (error.name === 'CanceledError') {
+      // Request was aborted, ignore
+      return [];
+    }
+    console.error('Error fetching tasks:', error);
     throw error;
   }
 };
@@ -117,12 +120,7 @@ export const getAllTasks = async (): Promise<Task[]> => {
 export const getTask = async (id: string): Promise<Task> => {
   try {
     const response = await api.get(`/tasks/${id}`);
-    return {
-      ...response.data,
-      assigned_to: response.data.assigned_to || 'Unassigned',
-      requester: response.data.requester || 'Unknown',
-      status: response.data.status || 'pending'
-    };
+    return response.data;
   } catch (error: any) {
     console.error('Error getting task:', error);
     throw error;
@@ -141,7 +139,7 @@ export const createTask = async (task: Task): Promise<Task> => {
 
 export const updateTask = async (id: string, task: Partial<Task>): Promise<Task> => {
   try {
-    const response = await api.patch(`/tasks/${id}`, task);
+    const response = await api.put(`/tasks/${id}`, task);
     return response.data;
   } catch (error: any) {
     console.error('Error updating task:', error);
@@ -154,6 +152,20 @@ export const deleteTask = async (id: string): Promise<void> => {
     await api.delete(`/tasks/${id}`);
   } catch (error: any) {
     console.error('Error deleting task:', error);
+    throw error;
+  }
+};
+
+export const getSubtasks = async (taskId: string, signal?: AbortSignal): Promise<Subtask[]> => {
+  try {
+    const response = await api.get(`/tasks/${taskId}/subtasks`, { signal });
+    return response.data;
+  } catch (error: any) {
+    if (error.name === 'CanceledError') {
+      // Request was aborted, ignore
+      return [];
+    }
+    console.error('Error fetching subtasks:', error);
     throw error;
   }
 };

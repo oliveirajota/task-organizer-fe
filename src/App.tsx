@@ -16,18 +16,24 @@ function App() {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'calendar'>('upcoming');
 
   useEffect(() => {
-    loadTasks();
-  }, []);
+    const abortController = new AbortController();
+    
+    const loadTasks = async () => {
+      try {
+        const fetchedTasks = await api.getAllTasks(abortController.signal);
+        setTasks(fetchedTasks);
+      } catch (err) {
+        setError('Failed to load tasks');
+        console.error('Error loading tasks:', err);
+      }
+    };
 
-  const loadTasks = async () => {
-    try {
-      const fetchedTasks = await api.getAllTasks();
-      setTasks(fetchedTasks);
-    } catch (err) {
-      setError('Failed to load tasks');
-      console.error('Error loading tasks:', err);
-    }
-  };
+    loadTasks();
+
+    return () => {
+      abortController.abort();
+    };
+  }, []);
 
   const handleTaskClick = (task: Task) => {
     setSelectedTask(task);
